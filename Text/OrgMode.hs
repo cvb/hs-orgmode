@@ -101,18 +101,20 @@ parent n = lookAhead (satisfyC (isParent n)) *> return ()
         isParent _ _                      = False
 
 satisfyC :: (Stream s m ChunkR) => (ChunkR -> Bool) -> ParsecT s u m ChunkR
-satisfyC f = tokenPrim (\c -> show c)
-                       (\pos _c _cs -> pos)
-                       (\c -> if f c then Just c else Nothing)
+satisfyC f = chunk (\c -> if f c then Just c else Nothing)
+
+chunk :: (Stream s m ChunkR) => (ChunkR -> Maybe a) -> ParsecT s u m a
+chunk f = tokenPrim (\c -> show c)
+                    (\pos _c _cs -> pos)
+                    f
 
 parseBlock :: ChunkParser Block
 parseBlock = parseText <|> parseSection
 
 parseText :: ChunkParser Block
-parseText = toText <$> satisfyC isTextR
-  where isTextR (TextR _) = True
-        isTextR _         = False
-        toText (TextR t)  = Text t
+parseText = chunk toText
+  where toText (TextR t) = Just $ Text t
+        toText _         = Nothing
 
 parseSection :: ChunkParser Block
 parseSection = do
