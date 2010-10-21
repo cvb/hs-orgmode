@@ -1,0 +1,18 @@
+Name:                orgmode
+Version:             0.1
+Synopsis:            Simple parser/pretty-printer for emacs org-mode files
+Description:         A simple parser/pretty-printer for emacs org-mode files.
+		     Can do exact round-tripping.  For now doesn't parse very much.
+License:             BSD3
+License-file:        LICENSE
+Author:              Brent Yorgey
+Maintainer:          byorgey@gmail.com
+Category:            Text
+Build-type:          Simple
+-- Extra-source-files:  
+Cabal-version:       >=1.2
+
+Library
+  Exposed-modules:     Text.OrgMode
+  Build-depends:       base >= 4 && < 5, filepath >= 1.1 && < 1.2, 
+                       parsec >= 3.1.0 && < 3.2
