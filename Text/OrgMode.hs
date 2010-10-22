@@ -65,6 +65,7 @@ import Text.Parsec.Pos
 import qualified Text.PrettyPrint as PP
 import Text.PrettyPrint hiding (char, empty, space, text)
 
+import Data.Char
 import Data.Monoid
 import Control.Applicative hiding (many, (<|>), optional)
 import Control.Arrow ((+++))
@@ -120,7 +121,7 @@ instance Elt Raw where
 -- | 'Clean' is an instance of 'Elt' which throws away some
 --   formatting information.
 instance Elt Clean where
-  text    = Text
+  text    = Text . strip
   sectionHead n _ title _ tags _ = SectionHead n title tags
 
   isText (Text {}) = True
@@ -381,7 +382,7 @@ instance Pretty (Block Clean) where
 
             -- section headers reset indent level
             -- later if we parse lists, they will increase the indent level
-          updIndent old (Just (SectionHead new _ _)) = new
+          updIndent old (Just (SectionHead new _ _)) = new+1
           updIndent old _                            = old
 ------------------------------------------------------------
 -- Miscellaneous/utility
@@ -397,6 +398,9 @@ instance Monoid w => Applicative (Either w) where
   (Right f) <*> (Right x) = Right (f x)
 
 -- Parsing
+
+strip = d . d
+  where d = dropWhile isSpace . reverse
 
 tryAhead = try . lookAhead
 
