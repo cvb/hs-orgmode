@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, DeriveFunctor #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Text.OrgMode
@@ -7,7 +7,7 @@
 --
 -- Maintainer  :  byorgey@gmail.com
 -- Stability   :  experimental
--- Portability :  portable (uses only FlexibleContexts)
+-- Portability :  portable (uses only FlexibleContexts) XXX
 --
 -- Tools for working with emacs org-mode files, including parsers,
 -- pretty-printers, and an assortment of transformations.
@@ -23,9 +23,9 @@ module Text.OrgMode (
     Tag, Space, OrgEltRaw(..), OrgElt(..), OrgEltC
 
   -- ** Pretty-printing
-  , Pretty, toString
+  , Pretty(..), toString
 
-  -- * Line-by-line parsing/printing
+  -- * Flat org-mode documents
   -- $linebyline
 
   , OrgFlat(..)
@@ -34,6 +34,13 @@ module Text.OrgMode (
   , readOrgFlatFile, readOrgFlat
 
   -- ** Printing
+  -- $printflat
+  , writeOrgFlatFile
+
+  -- * Structured org-mode documents
+  -- $struct
+
+  , Org(..), OrgBlock(..)
 
   ) where
 
@@ -79,8 +86,11 @@ data OrgElt = Text String
 
 -- | Generic interface for constructing 'OrgElt'-like things.
 class OrgEltC e where
-  text        :: String -> e
-  sectionHead :: Int -> Space -> String -> Space -> [Tag] -> Space -> e
+  text          :: String -> e
+  sectionHead   :: Int -> Space -> String -> Space -> [Tag] -> Space -> e
+
+  isText        :: e -> Bool
+  isSectionHead :: e -> Maybe Int
 
 -- | 'OrgEltRaw' is an instance of 'OrgEltC' which retains all
 --   information.
@@ -88,11 +98,23 @@ instance OrgEltC OrgEltRaw where
   text        = TextR
   sectionHead = SectionHeadR
 
+  isText (TextR {}) = True
+  isText _          = False
+
+  isSectionHead (SectionHeadR n _ _ _ _ _) = Just n
+  isSectionHead _                          = Nothing
+
 -- | 'OrgElt' is an instance of 'OrgEltC' which throws away some
 --   formatting information.
 instance OrgEltC OrgElt where
   text    = Text
   sectionHead n _ title _ tags _ = SectionHead n title tags
+
+  isText (Text {}) = True
+  isText _         = False
+
+  isSectionHead (SectionHead n _ _) = Just n
+  isSectionHead _                   = Nothing
 
 -- | Class for pretty-printable things.
 class Pretty a where
@@ -129,7 +151,7 @@ instance Pretty OrgEltRaw where
    <> pprTags tags <> PP.text sp3
 
 ------------------------------------------------------------
--- Line-by-line parsing/pretty-printing
+-- Flat org-mode documents
 ------------------------------------------------------------
 
 -- $linebyline
@@ -151,6 +173,9 @@ instance Pretty OrgEltRaw where
 --   elements were read.
 data OrgFlat a = OrgFlat FilePath [a]
   deriving (Show)
+
+instance Functor OrgFlat where
+  fmap f (OrgFlat file elts) = OrgFlat file (fmap f elts)
 
 ----------------------------------------
 -- Parsing
@@ -205,58 +230,76 @@ parseTextLine = text <$> many anyChar
 ----------------------------------------
 -- Printing
 
--- instance Pretty a => (OrgFlat a) where
+-- $printflat
+-- To convert an 'OrgFlat' structure to a 'Doc' or 'String', use 'ppr'
+-- and 'toString', respectively.  For writing to a file,
+-- 'writeOrgFlatFile' is provided.
+
+-- | An 'OrgFlat' structure can be pretty-printed simply by
+--   pretty-printing each of its elements in turn.
+instance Pretty a => Pretty (OrgFlat a) where
+  ppr (OrgFlat _ elts) = vcat (map ppr elts)
+
+-- | Write out an 'OrgFlat' structure to its corresponding file.  Note
+--   that you probably don't want to do this with things of type
+--   @'OrgFlat' 'OrgElt'@, since important formatting information
+--   (e.g. indentation of lists) may be lost.
+writeOrgFlatFile :: Pretty a => OrgFlat a -> IO ()
+writeOrgFlatFile o@(OrgFlat f _) = writeFile f (toString o)
+
+------------------------------------------------------------
+-- Structured org-mode documents
+------------------------------------------------------------
+
+-- $struct
+-- XXX comments here
+
+data Org a = Org FilePath (OrgBlock a)
+  deriving (Show, Functor)
+
+data OrgBlock a = BElt a
+                  -- ^ A single element
+                | BNest (Maybe a) [OrgBlock a]
+                  -- ^ A nested section: an optional element (header)
+                  --   followed by a list of blocks (section body)
+  deriving (Show, Functor)
 
 
--- Converting raw format to more structured format
+orgFlatToOrg :: (OrgEltC a, Show a) => OrgFlat a -> Org a
+orgFlatToOrg (OrgFlat file elts) =
+  case parse parseBlock "" elts of
+    Left err    -> error (show err)
+    Right block -> Org file block
 
-{-
-data Org = Org FilePath [Block]
-  deriving (Show)
+type EltParser a = Parsec [a] ()
 
-data Block = PP.Text String
-           | Section Int String [Tag] [Block]
-  deriving (Show)
-
-orgRToOrg :: OrgR -> Org
-orgRToOrg (OrgR file chunks) =
-  case runParser (parseBlocks 1) () "" chunks of
-    Left err -> error (show err)
-    Right blocks -> Org file blocks
-
-type ChunkParser = Parsec [ChunkR] ()
-
-parseBlocks :: Int -> ChunkParser [Block]
+parseBlocks :: (OrgEltC a, Show a) => Int -> EltParser a [OrgBlock a]
 parseBlocks n = manyTill parseBlock (eof <|> parent n)
 
-parent :: Int -> ChunkParser ()
+parent :: (OrgEltC a, Show a) => Int -> EltParser a ()
 parent n = lookAhead (satisfyC (isParent n)) *> return ()
-  where isParent n (SectionR m _ _ _ _ _) = m < n
-        isParent _ _                      = False
+  where isParent n elt = case isSectionHead elt of
+                           Just m  -> m < n
+                           Nothing -> False
 
-satisfyC :: (Stream s m ChunkR) => (ChunkR -> Bool) -> ParsecT s u m ChunkR
-satisfyC f = chunk (\c -> if f c then Just c else Nothing)
+satisfyC :: (Stream s m a, Show a) => (a -> Bool) -> ParsecT s u m a
+satisfyC f = fst <$> chunk (\c -> if f c then Just c else Nothing)
 
-chunk :: (Stream s m ChunkR) => (ChunkR -> Maybe a) -> ParsecT s u m a
+chunk :: (Stream s m a, Show a) => (a -> Maybe b) -> ParsecT s u m (a,b)
 chunk f = tokenPrim (\c -> show c)
                     (\pos _c _cs -> pos)
-                    f
+                    (\a -> ((,) a) <$> f a)
 
-parseBlock :: ChunkParser Block
+parseBlock :: (OrgEltC a, Show a) => EltParser a (OrgBlock a)
 parseBlock = parseText <|> parseSection
 
-parseText :: ChunkParser Block
-parseText = chunk toText
-  where toText (TextR t) = Just $ Text t
-        toText _         = Nothing
+parseText :: (OrgEltC a, Show a) => EltParser a (OrgBlock a)
+parseText = BElt <$> satisfyC isText
 
-parseSection :: ChunkParser Block
+parseSection :: (OrgEltC a, Show a) => EltParser a (OrgBlock a)
 parseSection = do
-  (SectionR n _ title _ tags _) <- satisfyC isSectionR
-  Section n title tags <$> parseBlocks (n+1)
-  where isSectionR (SectionR {}) = True
-        isSectionR _             = False
--}
+  (secHd, n) <- chunk isSectionHead
+  BNest (Just secHd) <$> parseBlocks (n+1)
 
 ------------------------------------------------------------
 -- Miscellaneous/utility
