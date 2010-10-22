@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts, DeriveFunctor #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances, DeriveFunctor #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Text.OrgMode
@@ -7,7 +7,7 @@
 --
 -- Maintainer  :  byorgey@gmail.com
 -- Stability   :  experimental
--- Portability :  portable (uses only FlexibleContexts) XXX
+-- Portability :  FlexibleContexts, FlexibleInstances, DeriveFunctor
 --
 -- Tools for working with emacs org-mode files, including parsers,
 -- pretty-printers, and an assortment of transformations.
@@ -42,11 +42,17 @@ module Text.OrgMode (
 
   , Org(..), OrgBlock(..)
 
+  -- ** Parsing
+  , readOrgFile, readOrg
+
+  -- ** Printing
+
+
   ) where
 
 import System.FilePath
 
-import Text.Parsec
+import Text.Parsec hiding (satisfy)
 import Text.Parsec.String
 import Text.Parsec.Pos
 
@@ -155,7 +161,6 @@ instance Pretty OrgEltRaw where
 ------------------------------------------------------------
 
 -- $linebyline
-
 -- It is always possible to parse org-mode files line-by-line:
 -- meaningful syntactic units (e.g. links) may not span multiple
 -- lines.  This section defines a \"flat\" org-mode parser which
@@ -197,6 +202,9 @@ readOrgFlat :: OrgEltC a => FilePath -> String -> Either [ParseError] (OrgFlat a
 readOrgFlat f s = OrgFlat <$> pure f <*> parseLines s
   where parseLines   = parseCollect f parseOrgLine . lines
 
+----------------------------------------
+-- Actual parser guts (not exported)
+
 -- | Map a single parser over a list of inputs, and return either a
 --   list of results or a list of error messages.
 parseCollect :: FilePath -> Parser a -> [String] -> Either [ParseError] [a]
@@ -220,8 +228,11 @@ parseSectionHead
 
 -- | Parse a sequence of zero or more tags surrounded by colons, like :foo:bar:
 parseTags :: Parser [Tag]
-parseTags = char ':' *> endBy word (char ':') <|> return []
+parseTags = char ':' *> endBy1 parseTag (char ':') <|> return []
   <?> "tags"
+
+parseTag :: Parser Tag
+parseTag = many1 (noneOf ":")
 
 -- | Treat the entire line as raw text.
 parseTextLine :: OrgEltC a => Parser a
@@ -237,14 +248,16 @@ parseTextLine = text <$> many anyChar
 
 -- | An 'OrgFlat' structure can be pretty-printed simply by
 --   pretty-printing each of its elements in turn.
-instance Pretty a => Pretty (OrgFlat a) where
+instance Pretty (OrgFlat OrgEltRaw) where
   ppr (OrgFlat _ elts) = vcat (map ppr elts)
 
--- | Write out an 'OrgFlat' structure to its corresponding file.  Note
---   that you probably don't want to do this with things of type
---   @'OrgFlat' 'OrgElt'@, since important formatting information
---   (e.g. indentation of lists) may be lost.
-writeOrgFlatFile :: Pretty a => OrgFlat a -> IO ()
+-- | Write out an 'OrgFlat' structure to its corresponding file.  The
+--   inability to write an @'OrgFlat' 'OrgElt'@ structure is
+--   intentional, as this is almost certainly not what you want to do:
+--   reading in such a structure and writing it back out will probably
+--   destroy important formatting information (such as list
+--   indentation).
+writeOrgFlatFile :: OrgFlat OrgEltRaw -> IO ()
 writeOrgFlatFile o@(OrgFlat f _) = writeFile f (toString o)
 
 ------------------------------------------------------------
@@ -252,11 +265,18 @@ writeOrgFlatFile o@(OrgFlat f _) = writeFile f (toString o)
 ------------------------------------------------------------
 
 -- $struct
--- XXX comments here
+-- For some applications, it is useful to be able to observe and work
+-- with the nested hierarchical structure of org-mode documents
+-- directly.  This section defines types, parsers, and pretty-printers
+-- for working with such structured views of org-mode documents.
 
-data Org a = Org FilePath (OrgBlock a)
+-- | A structured org-mode document.
+data Org a = Org FilePath [OrgBlock a]
   deriving (Show, Functor)
 
+-- | A block of content in a structured org-mode document.  A block
+--   can either be a single element, or a nested structure with an
+--   optional header element and a list of sub-blocks.
 data OrgBlock a = BElt a
                   -- ^ A single element
                 | BNest (Maybe a) [OrgBlock a]
@@ -264,42 +284,74 @@ data OrgBlock a = BElt a
                   --   followed by a list of blocks (section body)
   deriving (Show, Functor)
 
+----------------------------------------
+-- Parsing
 
+-- | Convert a flat org-mode document to a structured one.
 orgFlatToOrg :: (OrgEltC a, Show a) => OrgFlat a -> Org a
 orgFlatToOrg (OrgFlat file elts) =
-  case parse parseBlock "" elts of
-    Left err    -> error (show err)
-    Right block -> Org file block
+  case parse (parseBlocks 1) "" elts of
+    Left err     -> error (show err)
+    Right blocks -> Org file blocks
+
+-- | Parse the given org-mode file into a structured 'Org'
+--   document. The type chosen for the elements determines whether
+--   formatting information will be retained or discarded.
+readOrgFile :: (OrgEltC a, Show a) => FilePath -> IO (Either [ParseError] (Org a))
+readOrgFile f = (fmap . fmap) orgFlatToOrg (readOrgFlatFile f)
+
+-- | @'readOrg' file str@ parses the contents of @str@ into a
+--   structured 'Org' document.  The type chosen for the elements
+--   determines whether formatting information will be retained or
+--   discarded.  @file@ should be the name of the file from which
+--   @str@ is taken when such a thing makes sense; it is used only in
+--   error messages, so passing @\"\"@ (or anything else) as the file
+--   argument is fine.
+readOrg :: (OrgEltC a, Show a) => FilePath -> String -> Either [ParseError] (Org a)
+readOrg f s = orgFlatToOrg <$> readOrgFlat f s
+
+----------------------------------------
+-- Actual parser guts (not exported)
+
+-- Note that we parse flat lists of org elements, not Strings!
 
 type EltParser a = Parsec [a] ()
 
+-- | Parse a single content block.
+parseBlock :: (OrgEltC a, Show a) => EltParser a (OrgBlock a)
+parseBlock = parseText <|> parseSection
+
+-- TODO: structure Text a bit better, i.e. coalesce adjacent ones etc.
+-- | Parse a line of text.
+parseText :: (OrgEltC a, Show a) => EltParser a (OrgBlock a)
+parseText = BElt <$> satisfy isText
+
+-- | Parse a section header followed by some content.
+parseSection :: (OrgEltC a, Show a) => EltParser a (OrgBlock a)
+parseSection = do
+  (secHd, n) <- satisfyWith isSectionHead
+  BNest (Just secHd) <$> parseBlocks (n+1)
+
+-- | Parse blocks at section level n (i.e. stop as soon as we see a
+--   section at a level less than n).
 parseBlocks :: (OrgEltC a, Show a) => Int -> EltParser a [OrgBlock a]
 parseBlocks n = manyTill parseBlock (eof <|> parent n)
 
 parent :: (OrgEltC a, Show a) => Int -> EltParser a ()
-parent n = lookAhead (satisfyC (isParent n)) *> return ()
+parent n = lookAhead (satisfy (isParent n)) *> return ()
   where isParent n elt = case isSectionHead elt of
                            Just m  -> m < n
                            Nothing -> False
 
-satisfyC :: (Stream s m a, Show a) => (a -> Bool) -> ParsecT s u m a
-satisfyC f = fst <$> chunk (\c -> if f c then Just c else Nothing)
+----------------------------------------
+-- Printing
 
-chunk :: (Stream s m a, Show a) => (a -> Maybe b) -> ParsecT s u m (a,b)
-chunk f = tokenPrim (\c -> show c)
-                    (\pos _c _cs -> pos)
-                    (\a -> ((,) a) <$> f a)
+instance Pretty (Org OrgEltRaw) where
+  ppr (Org _ bs) = vcat (map ppr bs) $+$ PP.text ""
 
-parseBlock :: (OrgEltC a, Show a) => EltParser a (OrgBlock a)
-parseBlock = parseText <|> parseSection
-
-parseText :: (OrgEltC a, Show a) => EltParser a (OrgBlock a)
-parseText = BElt <$> satisfyC isText
-
-parseSection :: (OrgEltC a, Show a) => EltParser a (OrgBlock a)
-parseSection = do
-  (secHd, n) <- chunk isSectionHead
-  BNest (Just secHd) <$> parseBlocks (n+1)
+instance Pretty (OrgBlock OrgEltRaw) where
+  ppr (BElt e) = ppr e
+  ppr (BNest hdr blocks) = maybe PP.empty ppr hdr $+$ vcat (map ppr blocks)
 
 ------------------------------------------------------------
 -- Miscellaneous/utility
@@ -324,5 +376,10 @@ blank = tab <|> char ' '
 blanks :: Parser String
 blanks = many blank <?> "blanks"
 
-word :: Parser String
-word = many alphaNum <?> "word"
+satisfy :: (Stream s m a, Show a) => (a -> Bool) -> ParsecT s u m a
+satisfy f = fst <$> satisfyWith (\c -> if f c then Just c else Nothing)
+
+satisfyWith :: (Stream s m a, Show a) => (a -> Maybe b) -> ParsecT s u m (a,b)
+satisfyWith f = tokenPrim (\c -> show c)
+                          (\pos _c _cs -> pos)
+                          (\a -> ((,) a) <$> f a)
