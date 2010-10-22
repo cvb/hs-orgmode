@@ -5,6 +5,12 @@
 
 -- UndecidableInstances is used only in a rather trivial way.
 
+-- TODO:
+--   - make readOrg go via Raw stuff for the initial reading, then parse that to
+--     either Org Raw or Org Clean
+--
+--   - change Text constructor to have Space on both sides
+
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Text.OrgMode
