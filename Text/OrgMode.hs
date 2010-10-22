@@ -1,4 +1,10 @@
-{-# LANGUAGE FlexibleContexts, FlexibleInstances, DeriveFunctor #-}
+{-# LANGUAGE FlexibleContexts,
+             FlexibleInstances,
+             DeriveFunctor,
+             UndecidableInstances #-}
+
+-- UndecidableInstances is used only in a rather trivial way.
+
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Text.OrgMode
@@ -20,7 +26,7 @@ module Text.OrgMode (
   -- $types
 
   -- ** Org-mode elements
-    Tag, Space, OrgEltRaw(..), OrgElt(..), OrgEltC
+    Tag, Space, Raw(..), Clean(..), Elt
 
   -- ** Pretty-printing
   , Pretty(..), toString
@@ -40,7 +46,7 @@ module Text.OrgMode (
   -- * Structured org-mode documents
   -- $struct
 
-  , Org(..), OrgBlock(..)
+  , Org(..), Block(..)
 
   -- ** Parsing
   , readOrgFile, readOrg
@@ -78,29 +84,30 @@ type Space = String
 -- | A basic element that can occur in an org-mode file.  This is the
 --   \"raw\" version which keeps enough information to do exact
 --   round-tripping of parsing/printing.
-data OrgEltRaw = TextR String
-               | SectionHeadR Int Space String Space [Tag] Space
+data Raw = TextR String
+         | SectionHeadR Int Space String Space [Tag] Space
   deriving (Show)
 
 -- | A basic element that can occur in an org-mode file.  This is the
 --   \"sanitized\" version that only contains semantic information and
 --   throws away the formatting information necessary to do exact
 --   round-tripping.
-data OrgElt = Text String
-            | SectionHead Int String [Tag]
+data Clean = Text String
+           | SectionHead Int String [Tag]
   deriving (Show)
 
--- | Generic interface for constructing 'OrgElt'-like things.
-class OrgEltC e where
+-- | Generic interface for constructing elements that can occur in
+--   org-mode documents.
+class Elt e where
   text          :: String -> e
   sectionHead   :: Int -> Space -> String -> Space -> [Tag] -> Space -> e
 
   isText        :: e -> Bool
   isSectionHead :: e -> Maybe Int
 
--- | 'OrgEltRaw' is an instance of 'OrgEltC' which retains all
+-- | 'Raw' is an instance of 'Elt' which retains all
 --   information.
-instance OrgEltC OrgEltRaw where
+instance Elt Raw where
   text        = TextR
   sectionHead = SectionHeadR
 
@@ -110,9 +117,9 @@ instance OrgEltC OrgEltRaw where
   isSectionHead (SectionHeadR n _ _ _ _ _) = Just n
   isSectionHead _                          = Nothing
 
--- | 'OrgElt' is an instance of 'OrgEltC' which throws away some
+-- | 'Clean' is an instance of 'Elt' which throws away some
 --   formatting information.
-instance OrgEltC OrgElt where
+instance Elt Clean where
   text    = Text
   sectionHead n _ title _ tags _ = SectionHead n title tags
 
@@ -130,9 +137,9 @@ class Pretty a where
 toString :: Pretty a => a -> String
 toString = render . ppr
 
--- | 'OrgElt's can be pretty-printed, inserting nice-looking default
+-- | 'Clean's can be pretty-printed, inserting nice-looking default
 --   amounts of whitespace as necessary.
-instance Pretty OrgElt where
+instance Pretty Clean where
   ppr (Text s) = PP.text s
   ppr (SectionHead n title tags) =
       PP.text (replicate n '*') <+> PP.text title <> tagSpace <> pprTags tags
@@ -147,9 +154,9 @@ pprTags :: [Tag] -> Doc
 pprTags [] = PP.empty
 pprTags ts = colon <> hcat (punctuate colon (map PP.text ts)) <> colon
 
--- | 'OrgEltRaw's can be pretty-printed straightfowardly, since they
+-- | 'Raw's can be pretty-printed straightfowardly, since they
 --   retain all formatting information from the original source.
-instance Pretty OrgEltRaw where
+instance Pretty Raw where
   ppr (TextR s) = PP.text s
   ppr (SectionHeadR n sp1 title sp2 tags sp3) =
       PP.text (replicate n '*') <> PP.text sp1
@@ -170,7 +177,7 @@ instance Pretty OrgEltRaw where
 -- so on).
 --
 -- It also defines a printer for this flat org-mode structure. If
--- 'OrgEltRaw' is used, enough information is kept in the parsed AST
+-- 'Raw' is used, enough information is kept in the parsed AST
 -- that round-trip parsing/printing is exact.
 
 -- | \"Flat\" org-mode structure, essentially just a (line-by-line) list
@@ -188,7 +195,7 @@ instance Functor OrgFlat where
 -- | Parse the given org-mode file into a flat (line-by-line)
 --   'OrgFlat' structure. The type chosen for the elements determines
 --   whether formatting information will be retained or discarded.
-readOrgFlatFile :: OrgEltC a => FilePath -> IO (Either [ParseError] (OrgFlat a))
+readOrgFlatFile :: Elt a => FilePath -> IO (Either [ParseError] (OrgFlat a))
 readOrgFlatFile f = readOrgFlat f <$> readFile f
 
 -- | @'readOrgFlat' file str@ parses the contents of @str@ into a flat
@@ -198,7 +205,7 @@ readOrgFlatFile f = readOrgFlat f <$> readFile f
 --   from which @str@ is taken when such a thing makes sense; it is
 --   used only in error messages, so passing @\"\"@ (or anything else)
 --   as the file argument is fine.
-readOrgFlat :: OrgEltC a => FilePath -> String -> Either [ParseError] (OrgFlat a)
+readOrgFlat :: Elt a => FilePath -> String -> Either [ParseError] (OrgFlat a)
 readOrgFlat f s = OrgFlat <$> pure f <*> parseLines s
   where parseLines   = parseCollect f parseOrgLine . lines
 
@@ -212,10 +219,10 @@ parseCollect f p = sequenceA . zipWith (\n -> collectivize . parse (setLine n p)
   where collectivize = (:[]) +++ id
         setLine n p  = setPosition (newPos f n 0) >> p
 
-parseOrgLine :: OrgEltC a => Parser a
+parseOrgLine :: Elt a => Parser a
 parseOrgLine = parseSectionHead <|> parseTextLine  <?> "org line"
 
-parseSectionHead :: OrgEltC a => Parser a
+parseSectionHead :: Elt a => Parser a
 parseSectionHead
   = sectionHead <$> (length <$> many1 (char '*'))
                 <*> blanks
@@ -235,7 +242,7 @@ parseTag :: Parser Tag
 parseTag = many1 (noneOf ":")
 
 -- | Treat the entire line as raw text.
-parseTextLine :: OrgEltC a => Parser a
+parseTextLine :: Elt a => Parser a
 parseTextLine = text <$> many anyChar
 
 ----------------------------------------
@@ -248,16 +255,16 @@ parseTextLine = text <$> many anyChar
 
 -- | An 'OrgFlat' structure can be pretty-printed simply by
 --   pretty-printing each of its elements in turn.
-instance Pretty (OrgFlat OrgEltRaw) where
+instance Pretty (OrgFlat Raw) where
   ppr (OrgFlat _ elts) = vcat (map ppr elts)
 
 -- | Write out an 'OrgFlat' structure to its corresponding file.  The
---   inability to write an @'OrgFlat' 'OrgElt'@ structure is
+--   inability to write an @'OrgFlat' 'Clean'@ structure is
 --   intentional, as this is almost certainly not what you want to do:
 --   reading in such a structure and writing it back out will probably
 --   destroy important formatting information (such as list
 --   indentation).
-writeOrgFlatFile :: OrgFlat OrgEltRaw -> IO ()
+writeOrgFlatFile :: OrgFlat Raw -> IO ()
 writeOrgFlatFile o@(OrgFlat f _) = writeFile f (toString o)
 
 ------------------------------------------------------------
@@ -271,24 +278,24 @@ writeOrgFlatFile o@(OrgFlat f _) = writeFile f (toString o)
 -- for working with such structured views of org-mode documents.
 
 -- | A structured org-mode document.
-data Org a = Org FilePath [OrgBlock a]
+data Org a = Org FilePath [Block a]
   deriving (Show, Functor)
 
 -- | A block of content in a structured org-mode document.  A block
 --   can either be a single element, or a nested structure with an
 --   optional header element and a list of sub-blocks.
-data OrgBlock a = BElt a
+data Block a = BElt a
                   -- ^ A single element
-                | BNest (Maybe a) [OrgBlock a]
+                | BNest (Maybe a) [Block a]
                   -- ^ A nested section: an optional element (header)
-                  --   followed by a list of blocks (section body)
+                  --   followed by a list of blocks (body)
   deriving (Show, Functor)
 
 ----------------------------------------
 -- Parsing
 
 -- | Convert a flat org-mode document to a structured one.
-orgFlatToOrg :: (OrgEltC a, Show a) => OrgFlat a -> Org a
+orgFlatToOrg :: (Elt a, Show a) => OrgFlat a -> Org a
 orgFlatToOrg (OrgFlat file elts) =
   case parse (parseBlocks 1) "" elts of
     Left err     -> error (show err)
@@ -297,7 +304,7 @@ orgFlatToOrg (OrgFlat file elts) =
 -- | Parse the given org-mode file into a structured 'Org'
 --   document. The type chosen for the elements determines whether
 --   formatting information will be retained or discarded.
-readOrgFile :: (OrgEltC a, Show a) => FilePath -> IO (Either [ParseError] (Org a))
+readOrgFile :: (Elt a, Show a) => FilePath -> IO (Either [ParseError] (Org a))
 readOrgFile f = (fmap . fmap) orgFlatToOrg (readOrgFlatFile f)
 
 -- | @'readOrg' file str@ parses the contents of @str@ into a
@@ -307,7 +314,7 @@ readOrgFile f = (fmap . fmap) orgFlatToOrg (readOrgFlatFile f)
 --   @str@ is taken when such a thing makes sense; it is used only in
 --   error messages, so passing @\"\"@ (or anything else) as the file
 --   argument is fine.
-readOrg :: (OrgEltC a, Show a) => FilePath -> String -> Either [ParseError] (Org a)
+readOrg :: (Elt a, Show a) => FilePath -> String -> Either [ParseError] (Org a)
 readOrg f s = orgFlatToOrg <$> readOrgFlat f s
 
 ----------------------------------------
@@ -318,26 +325,26 @@ readOrg f s = orgFlatToOrg <$> readOrgFlat f s
 type EltParser a = Parsec [a] ()
 
 -- | Parse a single content block.
-parseBlock :: (OrgEltC a, Show a) => EltParser a (OrgBlock a)
+parseBlock :: (Elt a, Show a) => EltParser a (Block a)
 parseBlock = parseText <|> parseSection
 
 -- TODO: structure Text a bit better, i.e. coalesce adjacent ones etc.
 -- | Parse a line of text.
-parseText :: (OrgEltC a, Show a) => EltParser a (OrgBlock a)
+parseText :: (Elt a, Show a) => EltParser a (Block a)
 parseText = BElt <$> satisfy isText
 
 -- | Parse a section header followed by some content.
-parseSection :: (OrgEltC a, Show a) => EltParser a (OrgBlock a)
+parseSection :: (Elt a, Show a) => EltParser a (Block a)
 parseSection = do
   (secHd, n) <- satisfyWith isSectionHead
   BNest (Just secHd) <$> parseBlocks (n+1)
 
 -- | Parse blocks at section level n (i.e. stop as soon as we see a
 --   section at a level less than n).
-parseBlocks :: (OrgEltC a, Show a) => Int -> EltParser a [OrgBlock a]
+parseBlocks :: (Elt a, Show a) => Int -> EltParser a [Block a]
 parseBlocks n = manyTill parseBlock (eof <|> parent n)
 
-parent :: (OrgEltC a, Show a) => Int -> EltParser a ()
+parent :: (Elt a, Show a) => Int -> EltParser a ()
 parent n = lookAhead (satisfy (isParent n)) *> return ()
   where isParent n elt = case isSectionHead elt of
                            Just m  -> m < n
@@ -346,13 +353,36 @@ parent n = lookAhead (satisfy (isParent n)) *> return ()
 ----------------------------------------
 -- Printing
 
-instance Pretty (Org OrgEltRaw) where
+-- Note we need UndecidableInstances for the instance below (since
+-- Block a is no smaller than Org a), but it is obviously terminating.
+
+-- | The instance for @'Org' a@ is straightforward, as long as we know
+--   how to pretty-print 'Block's of @a@s.
+instance Pretty (Block a) => Pretty (Org a) where
   ppr (Org _ bs) = vcat (map ppr bs) $+$ PP.text ""
 
-instance Pretty (OrgBlock OrgEltRaw) where
+-- | The instance for @'Block' 'Raw'@ is straightforward.
+instance Pretty (Block Raw) where
   ppr (BElt e) = ppr e
-  ppr (BNest hdr blocks) = maybe PP.empty ppr hdr $+$ vcat (map ppr blocks)
+  ppr (BNest hdr blocks) =  maybe PP.empty ppr hdr
+                        $+$ vcat (map ppr blocks)
 
+-- | The instance for @'Block' 'Clean'@ does some work to format and
+--   indent everything nicely.
+instance Pretty (Block Clean) where
+  ppr = pprBC 0
+    where pprBC n (BElt e) = indent n e
+          pprBC n (BNest hdr blocks)
+              =  maybe PP.empty ppr hdr
+             $+$ (vcat $ map (pprBC (updIndent n hdr)) blocks)
+
+          indent _ e@(SectionHead {}) = ppr e   -- don't indent section headers
+          indent n e                  = nest n $ ppr e
+
+            -- section headers reset indent level
+            -- later if we parse lists, they will increase the indent level
+          updIndent old (Just (SectionHead new _ _)) = new
+          updIndent old _                            = old
 ------------------------------------------------------------
 -- Miscellaneous/utility
 ------------------------------------------------------------
