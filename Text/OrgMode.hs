@@ -240,7 +240,7 @@ parseTags = char ':' *> endBy1 parseTag (char ':') <|> return []
   <?> "tags"
 
 parseTag :: Parser Tag
-parseTag = many1 (noneOf ":")
+parseTag = many1 (noneOf ": ")
 
 -- | Treat the entire line as raw text.
 parseTextLine :: Elt a => Parser a
