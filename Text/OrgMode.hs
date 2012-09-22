@@ -72,7 +72,7 @@ import qualified Text.PrettyPrint as PP
 import Text.PrettyPrint hiding (char, empty, space, text)
 
 import Data.Char
-import Data.Monoid
+import Data.Monoid hiding ((<>))
 import Control.Applicative hiding (many, (<|>), optional)
 import Control.Arrow ((+++))
 import Data.Traversable (sequenceA)
@@ -396,12 +396,12 @@ instance Pretty (Block Clean) where
 
 -- | An 'Applicative' instance for Either which does monoidal error
 --   collection.
-instance Monoid w => Applicative (Either w) where
-  pure = Right
-  (Left w) <*> (Right _)  = Left w
-  (Left w1) <*> (Left w2) = Left (w1 `mappend` w2)
-  (Right _) <*> (Left w)  = Left w
-  (Right f) <*> (Right x) = Right (f x)
+-- instance Monoid w => Applicative (Either w) where
+--   pure = Right
+--   (Left w) <*> (Right _)  = Left w
+--   (Left w1) <*> (Left w2) = Left (w1 `mappend` w2)
+--   (Right _) <*> (Left w)  = Left w
+--   (Right f) <*> (Right x) = Right (f x)
 
 -- Parsing
 
