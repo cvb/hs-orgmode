@@ -77,6 +77,11 @@ import Control.Applicative hiding (many, (<|>), optional)
 import Control.Arrow ((+++))
 import Data.Traversable (sequenceA)
 
+import           Data.Time.Clock (UTCTime, DiffTime)
+import qualified Data.Time.Clock  as C
+import qualified Data.Time.Format as TF
+import           System.Locale (defaultTimeLocale)
+import           Data.DateTime (fromGregorian)
 ------------------------------------------------------------
 -- Common Types
 ------------------------------------------------------------
@@ -92,6 +97,7 @@ type Space = String
 --   \"raw\" version which keeps enough information to do exact
 --   round-tripping of parsing/printing.
 data Raw = TextR String
+         | ClockR UTCTime UTCTime (Maybe DiffTime)
          | SectionHeadR Int Space String Space [Tag] Space
   deriving (Show)
 
@@ -100,6 +106,7 @@ data Raw = TextR String
 --   throws away the formatting information necessary to do exact
 --   round-tripping.
 data Clean = Text String
+           | Clock UTCTime UTCTime (Maybe DiffTime)
            | SectionHead Int String [Tag]
   deriving (Show)
 
@@ -108,6 +115,7 @@ data Clean = Text String
 class Elt e where
   text          :: String -> e
   sectionHead   :: Int -> Space -> String -> Space -> [Tag] -> Space -> e
+  clock         :: UTCTime -> UTCTime -> (Maybe DiffTime) -> e
 
   isText        :: e -> Bool
   isSectionHead :: e -> Maybe Int
@@ -117,9 +125,11 @@ class Elt e where
 instance Elt Raw where
   text        = TextR
   sectionHead = SectionHeadR
+  clock       = ClockR
 
-  isText (TextR {}) = True
-  isText _          = False
+  isText (TextR {})  = True
+  isText (ClockR {}) = True
+  isText _           = False
 
   isSectionHead (SectionHeadR n _ _ _ _ _) = Just n
   isSectionHead _                          = Nothing
@@ -129,9 +139,11 @@ instance Elt Raw where
 instance Elt Clean where
   text    = Text . strip
   sectionHead n _ title _ tags _ = SectionHead n title tags
+  clock   = Clock
 
-  isText (Text {}) = True
-  isText _         = False
+  isText (Text {})  = True
+  isText (Clock {}) = True
+  isText _          = False
 
   isSectionHead (SectionHead n _ _) = Just n
   isSectionHead _                   = Nothing
@@ -165,10 +177,26 @@ pprTags ts = colon <> hcat (punctuate colon (map PP.text ts)) <> colon
 --   retain all formatting information from the original source.
 instance Pretty Raw where
   ppr (TextR s) = PP.text s
+  ppr (ClockR beg end (Just len)) =
+    ppBorder beg end <> PP.text " => " <> PP.text (ppDiff len)
+  ppr (ClockR beg end Nothing)    = ppBorder beg end
   ppr (SectionHeadR n sp1 title sp2 tags sp3) =
       PP.text (replicate n '*') <> PP.text sp1
    <> PP.text title <> PP.text sp2
    <> pprTags tags <> PP.text sp3
+
+ppBorder beg end =
+  PP.text "["    <>
+  PP.text (TF.formatTime defaultTimeLocale "%Y-%m-%d %H:%M" beg) <>
+  PP.text "]--[" <>
+  PP.text (TF.formatTime defaultTimeLocale "%Y-%m-%d %H:%M" end) <>
+  PP.text "]"
+
+ppDiff d =
+  let d' = toRational d
+      h  = d' / 3600
+      s  = (d' - 3600 * h) / 60
+  in (show $ floor h) ++ ":" ++ (show $ floor s)
 
 ------------------------------------------------------------
 -- Flat org-mode documents
@@ -227,7 +255,9 @@ parseCollect f p = sequenceA . zipWith (\n -> collectivize . parse (setLine n p)
         setLine n p  = setPosition (newPos f n 0) >> p
 
 parseOrgLine :: Elt a => Parser a
-parseOrgLine = parseSectionHead <|> parseTextLine  <?> "org line"
+parseOrgLine = parseSectionHead <|>
+               (try parseClock) <|>
+               parseTextLine    <?> "org line"
 
 parseSectionHead :: Elt a => Parser a
 parseSectionHead
@@ -247,6 +277,37 @@ parseTags = char ':' *> endBy1 parseTag (char ':') <|> return []
 
 parseTag :: Parser Tag
 parseTag = many1 (noneOf ": ")
+
+-- | Parse Clock: ...
+parseClock :: Elt a => Parser a
+parseClock = do
+  spaces *> string "CLOCK: "
+  begin <- parseClock' <* string "--"
+  end   <- parseClock'
+  len   <- optionMaybe parseDiff
+  return $ clock begin end len
+
+decimal :: Parser Int
+decimal = foldl (\n d -> 10 * n + digitToInt d) 0 <$> many1 digit
+
+parseDiff :: Parser DiffTime
+parseDiff = do
+  spaces *> string "=>" *> spaces
+  h <- decimal
+  char ':'
+  m <- decimal
+  return $ C.secondsToDiffTime $ (fromIntegral h) * 3600 + (fromIntegral m) * 60
+
+parseClock' :: Parser UTCTime
+parseClock' = do
+  char '['
+  y <- decimal <* char '-'
+  m <- decimal <* char '-'
+  d <- decimal <* space
+  manyTill anyChar space
+  h <- decimal <* char ':'
+  min <- decimal <* char ']'
+  return $ fromGregorian (fromIntegral y) m d h min 0
 
 -- | Treat the entire line as raw text.
 parseTextLine :: Elt a => Parser a
