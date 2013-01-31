@@ -20,4 +20,5 @@ Library
                        pretty == 1.1.*,
                        time   == 1.4.*,
                        old-locale == 1.0.*,
-                       datetime == 0.2.*
+                       datetime == 0.2.*,
+                       containers == 0.5.*

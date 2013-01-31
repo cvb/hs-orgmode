@@ -82,6 +82,9 @@ import qualified Data.Time.Clock  as C
 import qualified Data.Time.Format as TF
 import           System.Locale (defaultTimeLocale)
 import           Data.DateTime (fromGregorian)
+
+import           Data.Map (Map)
+import qualified Data.Map as M
 ------------------------------------------------------------
 -- Common Types
 ------------------------------------------------------------
@@ -98,7 +101,11 @@ type Space = String
 --   round-tripping of parsing/printing.
 data Raw = TextR String
          | ClockR UTCTime UTCTime (Maybe DiffTime)
+         | DrawerBegR String
+         | PropertyR String String
+         | DrawerEndR
          | SectionHeadR Int Space String Space [Tag] Space
+         | DrawerR Drawer
   deriving (Show)
 
 -- | A basic element that can occur in an org-mode file.  This is the
@@ -107,7 +114,11 @@ data Raw = TextR String
 --   round-tripping.
 data Clean = Text String
            | Clock UTCTime UTCTime (Maybe DiffTime)
+           | DrawerBeg String
+           | Property String String
+           | DrawerEnd
            | SectionHead Int String [Tag]
+           | DrawerC Drawer
   deriving (Show)
 
 -- | Generic interface for constructing elements that can occur in
@@ -116,7 +127,17 @@ class Elt e where
   text          :: String -> e
   sectionHead   :: Int -> Space -> String -> Space -> [Tag] -> Space -> e
   clock         :: UTCTime -> UTCTime -> (Maybe DiffTime) -> e
+  drawerBeg     :: String -> e
+  drawerEnd     :: e
+  property      :: String -> String -> e
+  drawer        :: Drawer -> e
 
+  getProperty   :: e -> (String, String)
+  getDrawerBeg  :: e -> String
+  getText       :: e -> String
+  isProperty    :: e -> Bool
+  isDrawerBeg   :: e -> Bool
+  isDrawerEnd   :: e -> Bool
   isText        :: e -> Bool
   isSectionHead :: e -> Maybe Int
 
@@ -126,6 +147,23 @@ instance Elt Raw where
   text        = TextR
   sectionHead = SectionHeadR
   clock       = ClockR
+  drawerBeg   = DrawerBegR
+  drawerEnd   = DrawerEndR
+  property    = PropertyR
+  drawer      = DrawerR
+
+  getProperty (PropertyR k v) = (k,v)
+  getDrawerBeg (DrawerBegR name) = name
+  getText (TextR t) = t
+
+  isProperty (PropertyR {}) = True
+  isProperty _              = False
+
+  isDrawerBeg (DrawerBegR {}) = True
+  isDrawerBeg _               = False
+
+  isDrawerEnd (DrawerEndR {}) = True
+  isDrawerEnd _               = False
 
   isText (TextR {})  = True
   isText (ClockR {}) = True
@@ -140,6 +178,23 @@ instance Elt Clean where
   text    = Text . strip
   sectionHead n _ title _ tags _ = SectionHead n title tags
   clock   = Clock
+  drawerBeg   = DrawerBeg
+  drawerEnd   = DrawerEnd
+  property    = Property
+  drawer      = DrawerC
+
+  getProperty (Property k v) = (k,v)
+  getDrawerBeg (DrawerBeg name) = name
+  getText (Text t) = t
+  isProperty (Property name val) = True
+  isProperty _                   = False
+
+  isDrawerBeg (DrawerBeg name) = True
+  isDrawerBeg _                = False
+
+  isDrawerEnd (DrawerEnd {}) = True
+  isDrawerEnd _              = False
+
 
   isText (Text {})  = True
   isText (Clock {}) = True
@@ -257,6 +312,9 @@ parseCollect f p = sequenceA . zipWith (\n -> collectivize . parse (setLine n p)
 parseOrgLine :: Elt a => Parser a
 parseOrgLine = parseSectionHead <|>
                (try parseClock) <|>
+               (try parseDrawerBeg) <|>
+               (try parseDrawerEnd) <|>
+               (try parsePropertie) <|>
                parseTextLine    <?> "org line"
 
 parseSectionHead :: Elt a => Parser a
@@ -309,6 +367,31 @@ parseClock' = do
   min <- decimal <* char ']'
   return $ fromGregorian (fromIntegral y) m d h min 0
 
+parseDrawerBeg :: Elt a => Parser a
+parseDrawerBeg = do
+  name <- parseDrawerLine
+  case name == "END" of
+    True  -> fail "not expecting drawer end"
+    False -> return $ drawerBeg name
+
+parseDrawerEnd :: Elt a => Parser a
+parseDrawerEnd = do
+  name <- parseDrawerLine
+  case name == "END" of
+    False -> fail "expecting drawer end"
+    True  -> return drawerEnd
+
+parseDrawerLine :: Parser String
+parseDrawerLine = spaces *> char ':' *> many1 upper <* char ':' <* spaces <* eof
+
+parsePropertie :: Elt a => Parser a
+parsePropertie = do
+  spaces *> char ':'
+  name <- manyTill anyChar $ char ':'
+  spaces
+  val  <- many anyChar
+  return $ property name val
+
 -- | Treat the entire line as raw text.
 parseTextLine :: Elt a => Parser a
 parseTextLine = text <$> many anyChar
@@ -359,6 +442,11 @@ data Block a = BElt a
                   --   followed by a list of blocks (body)
   deriving (Show, Functor)
 
+type Name    = String
+type Content = String
+data Drawer  = Drawer Name Content
+             | Properties (Map Name Content)
+               deriving (Show)
 ----------------------------------------
 -- Parsing
 
@@ -394,7 +482,7 @@ type EltParser a = Parsec [a] ()
 
 -- | Parse a single content block.
 parseBlock :: (Elt a, Show a) => EltParser a (Block a)
-parseBlock = parseText <|> parseSection
+parseBlock = parseText <|> parseSection <|> parseDrawer
 
 -- TODO: structure Text a bit better, i.e. coalesce adjacent ones etc.
 -- | Parse a line of text.
@@ -406,6 +494,25 @@ parseSection :: (Elt a, Show a) => EltParser a (Block a)
 parseSection = do
   (secHd, n) <- satisfyWith isSectionHead
   BNest (Just secHd) <$> parseBlocks (n+1)
+
+parseDrawer :: (Elt a, Show a) => EltParser a (Block a)
+parseDrawer = do
+  name <- satisfy isDrawerBeg <?> "expecting drawer begin"
+  case getDrawerBeg name of
+    "PROPERTIES" -> parseProperties
+    -- n            -> parseCustomDrawer n
+
+parseCustomDrawer :: (Elt a, Show a) => String -> EltParser a (Block a)
+parseCustomDrawer name = do
+  t <- satisfy isText
+  satisfy isDrawerEnd
+  return $ BElt $ drawer $ Drawer name $ getText t
+
+parseProperties :: (Elt a, Show a) => EltParser a (Block a)
+parseProperties = do
+  p <- manyTill (satisfy isProperty) (satisfy isDrawerEnd) <?> "can't parse props"
+  return $ BElt $ drawer $ Properties $ M.fromList $ map (\pr -> getProperty pr) p
+
 
 -- | Parse blocks at section level n (i.e. stop as soon as we see a
 --   section at a level less than n).
