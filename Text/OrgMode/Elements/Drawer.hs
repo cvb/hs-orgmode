@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Text.OrgMode.Elements.Drawer  where
 
-import           Control.Applicative ((<$>), (<*), (<*>), (*>))
+import           Control.Applicative ((<$>), (*>))
 
 import           Data.Functor.Identity
 
@@ -9,18 +9,17 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 
 import           Text.Parsec hiding (tokens)
-import           Text.Parsec.Text
 
 import           Text.OrgMode.Types
-import           Text.OrgMode.Parsers.Utils
 
-data Drawer = Drawer [SElement] | PropertyDrawer [Property] deriving Show
+
+data Drawer = Drawer [Element] | PropertyDrawer [Property] deriving Show
 data Property = Property Name Value deriving Show
 
 instance SectionElement Drawer
 
-parseDrawer :: Stream Text Identity a => Parsec Text u Drawer
-parseDrawer = do
+drawer :: Stream Text Identity a => Parsec Text u Drawer
+drawer = do
   spaces *> char ':'
   name <- manyTill anyChar $ char ':'
   char ':' *> spaces *> newline
@@ -28,6 +27,7 @@ parseDrawer = do
     "PROPERTIES" -> PropertyDrawer <$> manyTill (try property) drawerEnd
     _            -> fail "custom drawer is not implemented"
 
+drawerEnd :: Stream Text Identity a => Parsec Text u ()
 drawerEnd = spaces *> string ":END:" *>
             spaces *> (eof <|> (newline >> return ()))
 

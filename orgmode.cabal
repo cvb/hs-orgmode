@@ -13,8 +13,10 @@ Cabal-version:       >=1.10
 
 Library
   Exposed-modules: Text.OrgMode
+                 , Text.OrgMode.Plain
                  , Text.OrgMode.Types
                  , Text.OrgMode.Elements.Head
+                 , Text.OrgMode.Elements.Section
                  , Text.OrgMode.Elements.List
                  , Text.OrgMode.Elements.Drawer
 

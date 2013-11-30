@@ -18,11 +18,11 @@ data Paragraph = TextLine Indent Text | BlankLine Indent deriving Show
 
 instance SectionElement Paragraph
 
-parseParagraph :: Stream Text Identity b => Parsec Text s Paragraph
-parseParagraph = try parseBlankLine <|> parseTextLine
+paragraph :: Stream Text Identity b => Parsec Text s Paragraph
+paragraph = try blankLine <|> textLine
 
-parseBlankLine :: Stream Text Identity b => Parsec Text s Paragraph
-parseBlankLine = BlankLine <$> indent <* newline
+blankLine :: Stream Text Identity b => Parsec Text s Paragraph
+blankLine = BlankLine <$> indent <* newline
 
-parseTextLine :: Stream Text Identity b => Parsec Text s Paragraph
-parseTextLine  = TextLine <$> indent <*> (T.pack <$> manyTill anyChar newline)
+textLine :: Stream Text Identity b => Parsec Text s Paragraph
+textLine  = TextLine <$> indent <*> (T.pack <$> manyTill anyChar newline)

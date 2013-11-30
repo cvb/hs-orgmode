@@ -7,7 +7,6 @@ import qualified Data.Text as T
 
 import Text.Parsec
 
-import Text.OrgMode.Types
 import Text.OrgMode.Elements.Keyword
 import Text.OrgMode.Parsers.Utils
 
@@ -18,8 +17,8 @@ data Head = Head { level    :: Int
                  , tags     :: [Text]
                  } deriving Show
 
-parseSectionHead :: Parsec Text [TodoSeq] Head
-parseSectionHead = do
+sectionHead :: Parsec Text [TodoSeq] Head
+sectionHead = do
   stars  <- length <$> many1 (char '*') <* blanks
   todokw <- parseTodoKw                 <* blanks
   pri    <- parsePri                    <* blanks

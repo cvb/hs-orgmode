@@ -96,7 +96,7 @@ parseContent i = manyTill listEl $ tryEnd i
 
 listEl :: Stream Text Identity b => Parsec Text s ListEl
 listEl =  (try $ ListEl <$> list)
-      <|> (try $ ListEl <$> parseParagraph)
+      <|> (try $ ListEl <$> paragraph)
 
 tryEnd :: Stream Text Identity b => Indent -> Parsec Text s ()
 tryEnd i = try $ lookAhead $ endOfList i
@@ -112,7 +112,7 @@ endOfList i = try tryItem
       case n <= i of
         True -> return ()
         False -> fail "not eol"
-    tryBlanks   = count 2 parseBlankLine >> return ()
+    tryBlanks   = count 2 blankLine >> return ()
     checkIndent = do
       newind <- indent
       case newind <= i of

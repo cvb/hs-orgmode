@@ -2,17 +2,15 @@
 
 module Text.OrgMode.Plain where
 
-import           Control.Applicative ((<$>), (<*))
+import           Control.Applicative ((<$>))
 
 import           Data.Text (Text)
-import qualified Data.Text as T
 
 import           Text.Parsec hiding (tokens)
 
-import           Text.OrgMode.Types
-
-import           Text.OrgMode.Keywords.TodoKeywords
 import           Text.OrgMode.Elements.Head
+import           Text.OrgMode.Elements.Section
+import           Text.OrgMode.Elements.Keyword
 
 
 class Show a => Elem a
@@ -32,6 +30,5 @@ parsePlain raw = do
   b <- runParser plain todos "" raw'
   return $ b
 
--- plain :: Parsec Text s PlainDoc
-plain = many $ ((Node <$> parseSectionHead) <|> parseSection)
-
+plain :: Parsec Text [TodoSeq] PlainDoc
+plain = many $ ((Node <$> sectionHead) <|> (Node <$> section))
