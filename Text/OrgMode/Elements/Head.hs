@@ -44,7 +44,7 @@ parseTodoKw = try parseTodoKw' <|> return Nothing
       todo <- manyTill anyChar blank
       case haveTodo tds (T.pack todo) of
         True  -> return $ Just $ T.pack todo
-        False -> return $ Nothing
+        False -> fail "no such kw in list"
     haveTodo [] _ = False
     haveTodo ((TodoSeq ts ds):tds) todo =
       ts `contains` todo || ds `contains` todo || haveTodo tds todo

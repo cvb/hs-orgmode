@@ -27,8 +27,9 @@ type PlainDoc = [Node]
 parsePlain :: Text -> Either ParseError PlainDoc
 parsePlain raw = do
   (todos, raw') <- getTodos raw
-  b <- runParser plain todos "" raw'
-  return $ b
+  case todos of
+    [] -> runParser plain [defaultTodos] "" raw'
+    _  -> runParser plain todos "" raw'
 
 plain :: Parsec Text [TodoSeq] PlainDoc
 plain = many $ ((Node <$> sectionHead) <|> (Node <$> section))

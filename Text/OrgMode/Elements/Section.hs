@@ -28,7 +28,7 @@ section = try tillHead <|> tillEnd
 
 element :: Parsec Text [TodoSeq] Element
 element =  Element <$> try list
-             <|> Element <$> try drawer
+           <|> Element <$> try drawer
              -- <|> Element <$> try parseFootNote
              -- <|> Element <$> try parseTable
-             <|> Element <$> paragraph
+           <|> Element <$> paragraph

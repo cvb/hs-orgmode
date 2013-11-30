@@ -21,15 +21,14 @@ instance SectionElement Drawer
 drawer :: Stream Text Identity a => Parsec Text u Drawer
 drawer = do
   spaces *> char ':'
-  name <- manyTill anyChar $ char ':'
-  char ':' *> spaces *> newline
+  name <- manyTill anyChar (char ':')
+  spaces
   case name of
-    "PROPERTIES" -> PropertyDrawer <$> manyTill (try property) drawerEnd
+    "PROPERTIES" -> PropertyDrawer <$> manyTill (try property) (try drawerEnd)
     _            -> fail "custom drawer is not implemented"
 
 drawerEnd :: Stream Text Identity a => Parsec Text u ()
-drawerEnd = spaces *> string ":END:" *>
-            spaces *> (eof <|> (newline >> return ()))
+drawerEnd = spaces *> string ":END:" *> spaces
 
 -- parsePropertyDrawer :: Stream Text Identity a => Parsec Text u PropertyDrawer
 -- parsePropertyDrawer = return $ PropertyDrawer []
