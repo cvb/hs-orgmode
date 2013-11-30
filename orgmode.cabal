@@ -1,24 +1,40 @@
 Name:                orgmode
-Version:             0.1.1
+Version:             0.2.1
 Synopsis:            Simple parser/pretty-printer for emacs org-mode files
 Description:         A simple parser/pretty-printer for emacs org-mode files.
-		     Can do exact round-tripping.  For now doesn't parse very much.
 License:             BSD3
 License-file:        LICENSE
 Author:              Brent Yorgey
 Maintainer:          byorgey@gmail.com
 Category:            Text
 Build-type:          Simple
--- Extra-source-files:  
-Cabal-version:       >=1.2
+
+Cabal-version:       >=1.10
 
 Library
-  Exposed-modules:     Text.OrgMode
-  Build-depends:       base >= 4 && < 5,
-                       filepath == 1.3.*,
-                       parsec >= 3.1.0 && < 3.2,
-                       pretty == 1.1.*,
-                       time   == 1.4.*,
-                       old-locale == 1.0.*,
-                       datetime == 0.2.*,
-                       containers == 0.5.*
+  Exposed-modules: Text.OrgMode
+                 , Text.OrgMode.Types
+                 , Text.OrgMode.Elements.Head
+                 , Text.OrgMode.Elements.List
+                 , Text.OrgMode.Elements.Drawer
+
+  Build-depends: base       == 4.6.*
+               , filepath   == 1.3.*
+               , parsec     == 3.1.*
+               , pretty     == 1.1.*
+               , time       == 1.4.*
+               , old-locale == 1.0.*
+               , datetime   == 0.2.*
+               , containers == 0.5.*
+               , text       == 0.11.*
+               , ipprint    == 0.5.*
+               , transformers == 0.3.*
+
+  default-language:    Haskell2010
+
+  default-extensions:
+        OverloadedStrings,
+        RecordWildCards,
+        NamedFieldPuns
+
+  ghc-options: -Wall -fwarn-tabs -fno-warn-unused-do-bind

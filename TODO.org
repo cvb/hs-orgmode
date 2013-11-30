@@ -1,0 +1,66 @@
+
+* DONE headline
+
+* TODO section
+  consist of elements
+
+** TODO elements
+*** TODO greater
+    can containt other elements, except itself, property, items
+
+**** TODO Greater Blocks
+     #+BEGIN_NAME PARAMETERS
+     CONTENTS
+     #+END_NAME
+**** TODO drawer
+**** DONE list
+**** TODO footnote
+**** TODO tables
+
+*** TODO non-greater
+
+**** TODO babel call
+     #+CALL: VALUE
+**** TODO block
+     #+BEGIN_NAME DATA
+     CONTENTS
+     #+END_NAME
+**** TODO clock
+     CLOCK: TIMESTAMP DURATION
+**** TODO Comments
+**** TODO Fixed Width Areas
+**** TODO Horizontal Rules
+**** TODO Keywords
+     #+KEY: VALUE
+**** TODO LaTeX Environments
+**** TODO Node Properties
+     :PROPERTY: VALUE
+**** DONE Paragraphs
+     Paragraphs are the default element, which means that any
+     unrecognized context is a paragraph.
+     Empty lines and other elements end paragraphs.
+     Paragraphs can contain every type of object.
+**** TODO Table Rows
+
+*** Objects
+
+**** TODO Entities and LaTeX Fragments
+**** TODO Export Snippets
+     @@NAME:VALUE@@
+**** TODO Footnote References
+     [MARK]
+     [fn:LABEL]
+     [fn:LABEL:DEFINITION]
+     [fn::DEFINITION]
+**** TODO inline Babel Calls and Source Blocks
+**** TODO Line Breaks
+**** TODO Links
+**** TODO Macros
+**** TODO Targets and Radio Targets
+**** TODO Statistics Cookies
+     [PERCENT%]
+     [NUM1/NUM2]
+**** TODO Subscript and Superscript
+**** TODO Table Cells
+**** TODO Timestamps
+**** TODO Text Markup
