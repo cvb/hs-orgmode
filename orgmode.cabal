@@ -19,6 +19,7 @@ Library
                  , Text.OrgMode.Elements.Section
                  , Text.OrgMode.Elements.List
                  , Text.OrgMode.Elements.Drawer
+                 , Text.OrgMode.Elements.Clock
 
   Build-depends: base       == 4.6.*
                , filepath   == 1.3.*
@@ -37,6 +38,7 @@ Library
   default-extensions:
         OverloadedStrings,
         RecordWildCards,
-        NamedFieldPuns
+        NamedFieldPuns,
+        FlexibleContexts
 
   ghc-options: -Wall -fwarn-tabs -fno-warn-unused-do-bind

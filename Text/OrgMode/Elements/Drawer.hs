@@ -1,4 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
 module Text.OrgMode.Elements.Drawer  where
 
 import           Control.Applicative ((<$>), (*>))

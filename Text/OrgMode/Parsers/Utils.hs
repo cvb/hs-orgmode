@@ -19,7 +19,7 @@ strip :: String -> String
 strip = d . d
   where d = dropWhile isSpace . reverse
 
-tryAhead :: (Stream s m a, Show a) => ParsecT s u m a -> ParsecT s u m a
+tryAhead :: (Stream s m a) => ParsecT s u m a -> ParsecT s u m a
 tryAhead = try . lookAhead
 
 blank :: (Stream s m Char) => ParsecT s u m Char
@@ -35,3 +35,9 @@ satisfyWith :: (Stream s m a, Show a) => (a -> Maybe b) -> ParsecT s u m (a,b)
 satisfyWith f = tokenPrim (\c -> show c)
                           (\pos _c _cs -> pos)
                           (\a -> ((,) a) <$> f a)
+
+decimal :: (Stream Text m a) => ParsecT Text u m Int
+decimal = foldl (\n d -> 10 * n + digitToInt d) 0 <$> many1 digit
+
+spaces1 :: (Stream Text m a) => ParsecT Text u m String
+spaces1 = many1 space
