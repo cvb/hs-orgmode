@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 module Text.OrgMode.Elements.Head where
 
 import Control.Applicative hiding ((<|>), many)
@@ -6,6 +7,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 
 import Text.Parsec
+import GHC.Generics
 
 import Text.OrgMode.Elements.Keyword
 import Text.OrgMode.Parsers.Utils
@@ -15,7 +17,7 @@ data Head = Head { level    :: Int
                  , priority :: Maybe Char
                  , title    :: Maybe Text
                  , tags     :: [Text]
-                 } deriving Show
+                 } deriving (Show, Generic)
 
 sectionHead :: Parsec Text [TodoSeq] Head
 sectionHead = do
@@ -34,7 +36,8 @@ parsePri =
 parseTitle :: Parsec Text [TodoSeq] (Maybe Text)
 parseTitle = optionMaybe $ T.pack <$> title
   where
-    title = manyTill anyChar (try $ lookAhead (blanks >> parseTags >> blanks >> eoh))
+    title = manyTill anyChar
+            (try $ lookAhead (blanks >> parseTags >> blanks >> eoh))
 
 parseTodoKw :: Parsec Text [TodoSeq] (Maybe Text)
 parseTodoKw = try parseTodoKw' <|> return Nothing
@@ -52,7 +55,7 @@ parseTodoKw = try parseTodoKw' <|> return Nothing
     contains ((Todo n _):tds) txt = n == txt || contains tds txt
 
 parseTags :: Parsec Text [TodoSeq] [Text]
-parseTags = char ':' *> endBy1 parseTag (char ':') <|> return []
+parseTags = char ':' *> sepBy1 parseTag (char ' ') <* (char ':') <|> return []
 
 parseTag :: Parsec Text [TodoSeq] Text
 parseTag = T.pack <$> many1 (noneOf ": ")

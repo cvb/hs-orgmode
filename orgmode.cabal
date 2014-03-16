@@ -15,11 +15,14 @@ Library
   Exposed-modules: Text.OrgMode
                  , Text.OrgMode.Plain
                  , Text.OrgMode.Types
+                 , Text.OrgMode.Parsers.Utils
                  , Text.OrgMode.Elements.Head
                  , Text.OrgMode.Elements.Section
                  , Text.OrgMode.Elements.List
                  , Text.OrgMode.Elements.Drawer
                  , Text.OrgMode.Elements.Clock
+                 , Text.OrgMode.Elements.Paragraph
+                 , Text.OrgMode.Elements.Keyword
 
   Build-depends: base       == 4.6.*
                , filepath   == 1.3.*
@@ -29,7 +32,7 @@ Library
                , old-locale == 1.0.*
                , datetime   == 0.2.*
                , containers == 0.5.*
-               , text       == 0.11.*
+               , text       == 1.0.*
                , ipprint    == 0.5.*
                , transformers == 0.3.*
 
